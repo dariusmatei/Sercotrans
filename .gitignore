@@ -1,0 +1,11 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub-cache/
+build/
+ios/
+android/
+windows/
+linux/
+macos/
+web/.dart_tool/
