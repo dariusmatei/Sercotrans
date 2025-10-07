@@ -1,0 +1,36 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum Role { ADMIN MANAGER PM OPERATOR VIEWER }
+enum ProjectStatus { DRAFT IN_PROGRESS IN_REVIEW APPROVED CLOSED }
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      Role     @default(VIEWER)
+  projects  Project[] @relation("UserProjects")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  client    String?
+  status    ProjectStatus @default(DRAFT)
+  owner     User?    @relation("UserProjects", fields: [ownerId], references: [id])
+  ownerId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([name])
+}
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  resource  String?
+  meta      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+}
