@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../models/project.dart';
 import '../../state/projects_state.dart';
 import '../../theme.dart';
@@ -31,48 +32,61 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          Row(
             children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 360),
-                child: TextField(
-                  controller: _searchCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Search projects',
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                  onSubmitted: (v) => ctrl.applyFilters(),
-                  onChanged: (v) => ctrl.setSearch(v),
+              Expanded(
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      child: TextField(
+                        controller: _searchCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Search projects',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onSubmitted: (v) => ctrl.applyFilters(),
+                        onChanged: (v) => ctrl.setSearch(v),
+                      ),
+                    ),
+                    DropdownButtonFormField<String>(
+                      value: vm.filter.status.isEmpty ? null : vm.filter.status,
+                      items: const [
+                        DropdownMenuItem(value: 'Draft', child: Text('Draft')),
+                        DropdownMenuItem(value: 'InProgress', child: Text('In progress')),
+                        DropdownMenuItem(value: 'Approved', child: Text('Approved')),
+                        DropdownMenuItem(value: 'Closed', child: Text('Closed')),
+                      ],
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      onChanged: (v) => ctrl.setStatus(v ?? ''),
+                    ),
+                    FilledButton.icon(
+                      onPressed: vm.loading ? null : ctrl.applyFilters,
+                      icon: const Icon(Icons.filter_alt),
+                      label: const Text('Apply'),
+                    ),
+                    if (!vm.loading)
+                      IconButton(
+                        tooltip: 'Refresh',
+                        onPressed: ctrl.fetch,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    if (vm.loading)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                      ),
+                  ],
                 ),
               ),
-              DropdownButtonFormField<String>(
-                value: vm.filter.status.isEmpty ? null : vm.filter.status,
-                items: const [
-                  DropdownMenuItem(value: 'Draft', child: Text('Draft')),
-                  DropdownMenuItem(value: 'InProgress', child: Text('In progress')),
-                  DropdownMenuItem(value: 'Approved', child: Text('Approved')),
-                  DropdownMenuItem(value: 'Closed', child: Text('Closed')),
-                ],
-                decoration: const InputDecoration(labelText: 'Status'),
-                onChanged: (v) => ctrl.setStatus(v ?? ''),
-              ),
+              const SizedBox(width: 12),
               FilledButton.icon(
-                onPressed: vm.loading ? null : ctrl.applyFilters,
-                icon: const Icon(Icons.filter_alt),
-                label: const Text('Apply'),
-              ),
-              if (!vm.loading)
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: ctrl.fetch,
-                  icon: const Icon(Icons.refresh),
-                ),
-              if (vm.loading) const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                onPressed: () => context.go('/projects/new'),
+                icon: const Icon(Icons.add),
+                label: const Text('New Project'),
               ),
             ],
           ),
@@ -86,6 +100,7 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
                       sortBy: vm.filter.sortBy,
                       ascending: vm.filter.ascending,
                       onSort: (c) => ref.read(projectsProvider.notifier).toggleSort(c),
+                      onOpen: (id) => context.go('/projects/$id'),
                       dense: !isDesktop,
                     ),
             ),
@@ -125,6 +140,7 @@ class _ProjectsTable extends StatelessWidget {
     required this.sortBy,
     required this.ascending,
     required this.onSort,
+    required this.onOpen,
     this.dense = false,
   });
 
@@ -132,18 +148,21 @@ class _ProjectsTable extends StatelessWidget {
   final ProjectSort sortBy;
   final bool ascending;
   final void Function(ProjectSort column) onSort;
+  final void Function(String id) onOpen;
   final bool dense;
 
   @override
   Widget build(BuildContext context) {
     final rows = items.map((p) {
-      return DataRow(cells: [
-        DataCell(Text(p.name)),
-        DataCell(Text(p.client)),
-        DataCell(_StatusBadge(p.status)),
-        DataCell(Text(p.owner)),
-        DataCell(Text(p.dueDate != null ? _fmtDate(p.dueDate!) : '-')),
-      ]);
+      return DataRow(
+        cells: [
+          DataCell(Text(p.name), onTap: () => onOpen(p.id)),
+          DataCell(Text(p.client), onTap: () => onOpen(p.id)),
+          DataCell(_StatusBadge(p.status), onTap: () => onOpen(p.id)),
+          DataCell(Text(p.owner), onTap: () => onOpen(p.id)),
+          DataCell(Text(p.dueDate != null ? _fmtDate(p.dueDate!) : '-'), onTap: () => onOpen(p.id)),
+        ],
+      );
     }).toList();
 
     int? sortColumnIndex;
@@ -163,27 +182,11 @@ class _ProjectsTable extends StatelessWidget {
           sortColumnIndex: sortColumnIndex,
           sortAscending: ascending,
           columns: [
-            DataColumn(
-              label: const Text('Name'),
-              onSort: (_, __) => onSort(ProjectSort.name),
-            ),
-            DataColumn(
-              label: const Text('Client'),
-              onSort: (_, __) => onSort(ProjectSort.client),
-            ),
-            DataColumn(
-              label: const Text('Status'),
-              onSort: (_, __) => onSort(ProjectSort.status),
-            ),
-            DataColumn(
-              label: const Text('Owner'),
-              onSort: (_, __) => onSort(ProjectSort.owner),
-            ),
-            DataColumn(
-              label: const Text('Due'),
-              numeric: false,
-              onSort: (_, __) => onSort(ProjectSort.dueDate),
-            ),
+            DataColumn(label: const Text('Name'), onSort: (_, __) => onSort(ProjectSort.name)),
+            DataColumn(label: const Text('Client'), onSort: (_, __) => onSort(ProjectSort.client)),
+            DataColumn(label: const Text('Status'), onSort: (_, __) => onSort(ProjectSort.status)),
+            DataColumn(label: const Text('Owner'), onSort: (_, __) => onSort(ProjectSort.owner)),
+            DataColumn(label: const Text('Due'), onSort: (_, __) => onSort(ProjectSort.dueDate)),
           ],
           rows: rows,
           dataRowMinHeight: dense ? 36 : null,
@@ -193,10 +196,8 @@ class _ProjectsTable extends StatelessWidget {
     );
   }
 
-  String _fmtDate(DateTime d) {
-    return '\{0:04d\}-\{1:02d\}-\{2:02d\}'.format(d.year, d.month, d.day) if False else
+  String _fmtDate(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-  }
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -205,7 +206,6 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     Color bg;
     switch (status.toLowerCase()) {
       case 'approved':
@@ -223,11 +223,8 @@ class _StatusBadge extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(status, style: theme.textTheme.labelMedium),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Text(status, style: Theme.of(context).textTheme.labelMedium),
     );
   }
 }

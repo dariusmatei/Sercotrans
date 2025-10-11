@@ -25,4 +25,31 @@ class Project {
       dueDate: json['dueDate'] != null ? DateTime.tryParse(json['dueDate'].toString()) : null,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'client': client,
+        'status': status,
+        'owner': owner,
+        'dueDate': dueDate?.toIso8601String(),
+      };
+
+  Project copyWith({
+    String? id,
+    String? name,
+    String? client,
+    String? status,
+    String? owner,
+    DateTime? dueDate,
+  }) {
+    return Project(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      client: client ?? this.client,
+      status: status ?? this.status,
+      owner: owner ?? this.owner,
+      dueDate: dueDate ?? this.dueDate,
+    );
+  }
 }

@@ -41,4 +41,42 @@ class ProjectsApi {
       rethrow;
     }
   }
+
+  Future<Project> getById(String id) async {
+    final resp = await client.dio.get('/projects/$id');
+    final data = resp.data as Map<String, dynamic>;
+    return Project.fromJson(data);
+  }
+
+  Future<Project> create({
+    required String name,
+    required String client,
+    required String status,
+    required String owner,
+    DateTime? dueDate,
+  }) async {
+    final resp = await client.dio.post('/projects', data: {
+      'name': name,
+      'client': client,
+      'status': status,
+      'owner': owner,
+      if (dueDate != null) 'dueDate': dueDate.toIso8601String(),
+    });
+    return Project.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<Project> update(Project p) async {
+    final resp = await client.dio.patch('/projects/${p.id}', data: {
+      'name': p.name,
+      'client': p.client,
+      'status': p.status,
+      'owner': p.owner,
+      'dueDate': p.dueDate?.toIso8601String(),
+    });
+    return Project.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<void> delete(String id) async {
+    await client.dio.delete('/projects/$id');
+  }
 }
