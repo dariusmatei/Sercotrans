@@ -1,61 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+// păstrăm shell-ul existent
 import 'widgets/app_shell.dart';
 
-/// --- Auth state (simplu) ----------------------------------------------------
+// S1-F2: ecranul de login + state de auth
+import 'screens/login/login_screen.dart';
+import 'state/auth_state.dart';
 
-class AuthState {
-  final bool isAuthenticated;
-  final String? userName;
+// S1-F3: lista reală de proiecte
+import 'screens/projects/projects_list_screen.dart';
 
-  const AuthState({required this.isAuthenticated, this.userName});
-
-  AuthState copyWith({bool? isAuthenticated, String? userName}) {
-    return AuthState(
-      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
-      userName: userName ?? this.userName,
-    );
-  }
-}
-
-class AuthController extends StateNotifier<AuthState> {
-  AuthController() : super(const AuthState(isAuthenticated: false));
-
-  Future<void> signIn({required String email, required String password}) async {
-    // TODO: Integrare cu API real; aici doar simulăm succesul.
-    state = AuthState(isAuthenticated: true, userName: email.split('@').first);
-  }
-
-  void signOut() => state = const AuthState(isAuthenticated: false);
-}
-
-final authProvider = StateNotifierProvider<AuthController, AuthState>((ref) {
-  return AuthController();
-});
-
-/// --- Router + redirect logic ------------------------------------------------
-
+/// Router global — protejat de auth; se recreează automat când se schimbă auth state.
 final routerProvider = Provider<GoRouter>((ref) {
-  // Observăm auth; orice schimbare recreează routerul (simplu și robust).
   final auth = ref.watch(authProvider);
 
   return GoRouter(
+    // dacă în proiectul tău era altă rootă inițială, păstreaz-o
     initialLocation: '/dashboard',
+    // dacă aveai observers/redirecturi suplimentare, adaugă-le aici
     redirect: (context, state) {
-      final bool loggingIn = state.matchedLocation == '/login';
-      if (!auth.isAuthenticated) {
-        return loggingIn ? null : '/login';
-      }
+      final loggingIn = state.matchedLocation == '/login';
+      if (!auth.isAuthenticated) return loggingIn ? null : '/login';
       if (loggingIn) return '/dashboard';
       return null;
     },
     routes: [
+      // --- public
       GoRoute(
         path: '/login',
         name: 'login',
-        builder: (context, state) => const _LoginScreen(),
+        builder: (context, state) => const LoginScreen(),
       ),
+
+      // --- private (wrap în AppShell)
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [
@@ -64,11 +43,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: 'dashboard',
             builder: (context, state) => const _DashboardScreen(),
           ),
+          // S1-F3 — listă proiecte (table) + sort/filter basic
           GoRoute(
             path: '/projects',
             name: 'projects',
-            builder: (context, state) => const _PlaceholderScreen(title: 'Projects'),
+            builder: (context, state) => const ProjectsListScreen(),
           ),
+          // lăsăm placeholder-ele existente până legăm ecranele reale
           GoRoute(
             path: '/boards',
             name: 'boards',
@@ -85,73 +66,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-/// --- Ecrane temporare (MVP scaffolding) -------------------------------------
-
-class _LoginScreen extends ConsumerStatefulWidget {
-  const _LoginScreen();
-  @override
-  ConsumerState<_LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends ConsumerState<_LoginScreen> {
-  final _form = GlobalKey<FormState>();
-  final _email = TextEditingController();
-  final _pass = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _form,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Sign in', style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _email,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _pass,
-                      obscureText: true,
-                      decoration: const InputDecoration(labelText: 'Password'),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () async {
-                          if (_form.currentState!.validate()) {
-                            await ref.read(authProvider.notifier).signIn(
-                              email: _email.text.trim(),
-                              password: _pass.text,
-                            );
-                            if (context.mounted) context.go('/dashboard');
-                          }
-                        },
-                        child: const Text('Continue'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+/// --- Ecrane simple „la pachet” (păstrăm stilul din router-ul vechi) ---------
 
 class _DashboardScreen extends ConsumerWidget {
   const _DashboardScreen();
@@ -161,61 +76,16 @@ class _DashboardScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).userName ?? 'User';
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: ListView(
-        children: [
-          Text('Welcome, $user 👋', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: const [
-              _KpiCard(title: 'Active Projects', value: '12'),
-              _KpiCard(title: 'Overdue Tasks', value: '5'),
-              _KpiCard(title: 'Files Updated', value: '27'),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text('Getting started', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            'Use the sidebar to access Projects, Boards and Files. '
-            'This is the MVP scaffold — connect the real API next.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({required this.title, required this.value});
-  final String title;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 220,
-      height: 120,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.labelLarge),
-              const Spacer(),
-              Text(value, style: Theme.of(context).textTheme.headlineMedium),
-            ],
-          ),
-        ),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: Text('Welcome, $user 👋', style: Theme.of(context).textTheme.headlineSmall),
       ),
     );
   }
 }
 
 class _PlaceholderScreen extends StatelessWidget {
-  const _PlaceholderScreen({required this.title});
+  const _PlaceholderScreen({required this.title, super.key});
   final String title;
 
   @override
