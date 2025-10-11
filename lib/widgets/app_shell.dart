@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../router.dart';
+import '../state/auth_state.dart';
 import '../theme.dart';
 
 class AppShell extends ConsumerWidget {
@@ -12,23 +12,15 @@ class AppShell extends ConsumerWidget {
     if (l.startsWith('/projects')) return 1;
     if (l.startsWith('/boards')) return 2;
     if (l.startsWith('/files')) return 3;
-    return 0; // dashboard
-    }
+    return 0;
+  }
 
   void _goByIndex(BuildContext context, int i) {
     switch (i) {
-      case 0:
-        context.go('/dashboard');
-        break;
-      case 1:
-        context.go('/projects');
-        break;
-      case 2:
-        context.go('/boards');
-        break;
-      case 3:
-        context.go('/files');
-        break;
+      case 0: context.go('/dashboard'); break;
+      case 1: context.go('/projects'); break;
+      case 2: context.go('/boards'); break;
+      case 3: context.go('/files'); break;
     }
   }
 
@@ -41,13 +33,6 @@ class AppShell extends ConsumerWidget {
     final selected = _indexForLocation(location);
     final authCtrl = ref.read(authProvider.notifier);
     final user = ref.watch(authProvider).userName ?? 'User';
-
-    final destinations = const [
-      NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
-      NavigationDestination(icon: Icon(Icons.work_outline), selectedIcon: Icon(Icons.work), label: 'Projects'),
-      NavigationDestination(icon: Icon(Icons.view_kanban_outlined), selectedIcon: Icon(Icons.view_kanban), label: 'Boards'),
-      NavigationDestination(icon: Icon(Icons.folder_open), selectedIcon: Icon(Icons.folder), label: 'Files'),
-    ];
 
     final sidebar = NavigationRail(
       selectedIndex: selected,
@@ -69,9 +54,9 @@ class AppShell extends ConsumerWidget {
           child: IconButton(
             tooltip: 'Sign out',
             icon: const Icon(Icons.logout),
-            onPressed: () {
-              authCtrl.signOut();
-              context.go('/login');
+            onPressed: () async {
+              await authCtrl.signOut();
+              if (context.mounted) context.go('/login');
             },
           ),
         ),
@@ -84,8 +69,7 @@ class AppShell extends ConsumerWidget {
           children: [
             Text('Workflow Manager', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(width: 12),
-            if (!isDesktop) // chip mic pe mobil/tablet
-              Chip(label: Text(user)),
+            if (!isDesktop) Chip(label: Text(user)),
           ],
         ),
         actions: isDesktop
@@ -94,17 +78,14 @@ class AppShell extends ConsumerWidget {
                   children: [
                     Text(user),
                     const SizedBox(width: 12),
-                    CircleAvatar(
-                      radius: 14,
-                      child: Text(user.isNotEmpty ? user[0].toUpperCase() : '?'),
-                    ),
+                    CircleAvatar(radius: 14, child: Text(user.isNotEmpty ? user[0].toUpperCase() : '?')),
                     const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Sign out',
                       icon: const Icon(Icons.logout),
-                      onPressed: () {
-                        authCtrl.signOut();
-                        context.go('/login');
+                      onPressed: () async {
+                        await authCtrl.signOut();
+                        if (context.mounted) context.go('/login');
                       },
                     ),
                   ],
@@ -116,19 +97,18 @@ class AppShell extends ConsumerWidget {
           ? NavigationBar(
               selectedIndex: selected,
               onDestinationSelected: (i) => _goByIndex(context, i),
-              destinations: destinations,
+              destinations: const [
+                NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
+                NavigationDestination(icon: Icon(Icons.work_outline), selectedIcon: Icon(Icons.work), label: 'Projects'),
+                NavigationDestination(icon: Icon(Icons.view_kanban_outlined), selectedIcon: Icon(Icons.view_kanban), label: 'Boards'),
+                NavigationDestination(icon: Icon(Icons.folder_open), selectedIcon: Icon(Icons.folder), label: 'Files'),
+              ],
             )
           : null,
-      drawer: (isTablet && selected > 3) ? const Drawer() : null,
       body: Row(
         children: [
           if (isDesktop) SizedBox(width: 84, child: sidebar),
-          Expanded(
-            child: ColoredBox(
-              color: Theme.of(context).colorScheme.surface,
-              child: child,
-            ),
-          ),
+          Expanded(child: ColoredBox(color: Theme.of(context).colorScheme.surface, child: child)),
         ],
       ),
     );
