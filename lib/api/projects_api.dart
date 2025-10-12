@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
 import '../models/project.dart';
+import 'api_error.dart';
 
 class ProjectsApi {
   final ApiClient client;
@@ -35,17 +36,17 @@ class ProjectsApi {
       }
       return <Project>[];
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        return <Project>[];
-      }
-      rethrow;
+      throw ApiError.fromDio(e);
     }
   }
 
   Future<Project> getById(String id) async {
-    final resp = await client.dio.get('/projects/$id');
-    final data = resp.data as Map<String, dynamic>;
-    return Project.fromJson(data);
+    try {
+      final resp = await client.dio.get('/projects/' + id);
+      return Project.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
   }
 
   Future<Project> create({
@@ -55,28 +56,40 @@ class ProjectsApi {
     required String owner,
     DateTime? dueDate,
   }) async {
-    final resp = await client.dio.post('/projects', data: {
-      'name': name,
-      'client': client,
-      'status': status,
-      'owner': owner,
-      if (dueDate != null) 'dueDate': dueDate.toIso8601String(),
-    });
-    return Project.fromJson(resp.data as Map<String, dynamic>);
+    try {
+      final resp = await client.dio.post('/projects', data: {
+        'name': name,
+        'client': client,
+        'status': status,
+        'owner': owner,
+        if (dueDate != null) 'dueDate': dueDate.toIso8601String(),
+      });
+      return Project.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
   }
 
   Future<Project> update(Project p) async {
-    final resp = await client.dio.patch('/projects/${p.id}', data: {
-      'name': p.name,
-      'client': p.client,
-      'status': p.status,
-      'owner': p.owner,
-      'dueDate': p.dueDate?.toIso8601String(),
-    });
-    return Project.fromJson(resp.data as Map<String, dynamic>);
+    try {
+      final resp = await client.dio.patch('/projects/' + p.id, data: {
+        'name': p.name,
+        'client': p.client,
+        'status': p.status,
+        'owner': p.owner,
+        'dueDate': p.dueDate?.toIso8601String(),
+      });
+      return Project.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
   }
 
   Future<void> delete(String id) async {
-    await client.dio.delete('/projects/$id');
+    try {
+      await client.dio.delete('/projects/' + id);
+    } on DioException catch (e) {
+      throw ApiError.fromDio(e);
+    }
   }
 }

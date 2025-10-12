@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../state/project_detail_state.dart';
 import '../../models/project.dart';
+import '../../utils/ui_snackbar.dart';
+import '../../api/api_error.dart';
 
 class ProjectDetailScreen extends ConsumerStatefulWidget {
   const ProjectDetailScreen({super.key, required this.projectId});
@@ -19,12 +21,6 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   final _owner = TextEditingController();
   String _status = 'Draft';
   DateTime? _due;
-
-  @override
-  void initState() {
-    super.initState();
-    // init values will be set in build when state loads
-  }
 
   @override
   void dispose() {
@@ -59,16 +55,22 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                 ? null
                 : () async {
                     if (_form.currentState!.validate()) {
-                      final ok = await ctrl.save(
-                        name: _name.text.trim(),
-                        client: _client.text.trim(),
-                        status: _status,
-                        owner: _owner.text.trim(),
-                        dueDate: _due,
-                      );
-                      if (ok && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
-                        if (vm.isNew) context.go('/projects'); // back to list after create
+                      try {
+                        final ok = await ctrl.save(
+                          name: _name.text.trim(),
+                          client: _client.text.trim(),
+                          status: _status,
+                          owner: _owner.text.trim(),
+                          dueDate: _due,
+                        );
+                        if (ok && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
+                          if (vm.isNew) context.go('/projects');
+                        }
+                      } on ApiError catch (e) {
+                        showApiErrorSnack(context, e);
+                      } catch (_) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Eroare la salvare.')));
                       }
                     }
                   },

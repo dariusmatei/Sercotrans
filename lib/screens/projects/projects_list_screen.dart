@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../models/project.dart';
 import '../../state/projects_state.dart';
 import '../../theme.dart';
+import '../../utils/ui_snackbar.dart';
+import '../../api/api_error.dart';
 
 class ProjectsListScreen extends ConsumerStatefulWidget {
   const ProjectsListScreen({super.key});
@@ -48,7 +50,9 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
                           labelText: 'Search projects',
                           prefixIcon: Icon(Icons.search),
                         ),
-                        onSubmitted: (v) => ctrl.applyFilters(),
+                        onSubmitted: (v) async {
+                          try { await ctrl.applyFilters(); } on ApiError catch (e) { showApiErrorSnack(context, e); }
+                        },
                         onChanged: (v) => ctrl.setSearch(v),
                       ),
                     ),
@@ -64,14 +68,18 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
                       onChanged: (v) => ctrl.setStatus(v ?? ''),
                     ),
                     FilledButton.icon(
-                      onPressed: vm.loading ? null : ctrl.applyFilters,
+                      onPressed: vm.loading ? null : () async {
+                        try { await ctrl.applyFilters(); } on ApiError catch (e) { showApiErrorSnack(context, e); }
+                      },
                       icon: const Icon(Icons.filter_alt),
                       label: const Text('Apply'),
                     ),
                     if (!vm.loading)
                       IconButton(
                         tooltip: 'Refresh',
-                        onPressed: ctrl.fetch,
+                        onPressed: () async {
+                          try { await ctrl.fetch(); } on ApiError catch (e) { showApiErrorSnack(context, e); }
+                        },
                         icon: const Icon(Icons.refresh),
                       ),
                     if (vm.loading)
@@ -99,8 +107,10 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
                       items: vm.items,
                       sortBy: vm.filter.sortBy,
                       ascending: vm.filter.ascending,
-                      onSort: (c) => ref.read(projectsProvider.notifier).toggleSort(c),
-                      onOpen: (id) => context.go('/projects/$id'),
+                      onSort: (c) async {
+                        try { await ref.read(projectsProvider.notifier).toggleSort(c); } on ApiError catch (e) { showApiErrorSnack(context, e); }
+                      },
+                      onOpen: (id) => context.go('/projects/' + id),
                       dense: !isDesktop,
                     ),
             ),

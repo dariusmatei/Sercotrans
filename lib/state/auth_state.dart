@@ -9,22 +9,27 @@ class AuthState {
   final String? userName;
   final bool busy;
   final String? error;
+  final Set<String> roles;
 
   const AuthState({
     required this.isAuthenticated,
     this.userName,
     this.busy = false,
     this.error,
+    this.roles = const {},
   });
 
-  AuthState copyWith({bool? isAuthenticated, String? userName, bool? busy, String? error}) {
+  AuthState copyWith({bool? isAuthenticated, String? userName, bool? busy, String? error, Set<String>? roles}) {
     return AuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
       userName: userName ?? this.userName,
       busy: busy ?? this.busy,
       error: error,
+      roles: roles ?? this.roles,
     );
   }
+
+  bool hasRole(String r) => roles.contains(r);
 
   static const initial = AuthState(isAuthenticated: false, busy: false);
 }
@@ -60,7 +65,7 @@ class AuthController extends StateNotifier<AuthState> {
     try {
       final res = await _api.login(email: email, password: password);
       await _client.setTokens(res.accessToken, res.refreshToken);
-      state = state.copyWith(isAuthenticated: true, userName: res.userName, busy: false);
+      state = state.copyWith(isAuthenticated: true, userName: res.userName, busy: false, roles: res.roles);
     } catch (e) {
       state = state.copyWith(busy: false, error: 'Autentificare eșuată');
       rethrow;

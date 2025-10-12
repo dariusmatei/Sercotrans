@@ -5,7 +5,7 @@ class AuthApi {
   final ApiClient client;
   AuthApi(this.client);
 
-  Future<({String accessToken, String refreshToken, String userName})> login({
+  Future<({String accessToken, String refreshToken, String userName, Set<String> roles})> login({
     required String email,
     required String password,
   }) async {
@@ -17,7 +17,8 @@ class AuthApi {
     final access = data['accessToken'] as String;
     final refresh = data['refreshToken'] as String;
     final name = (data['user']?['name'] as String?) ?? email.split('@').first;
-    return (accessToken: access, refreshToken: refresh, userName: name);
+    final rolesRaw = (data['user']?['roles'] as List?)?.map((e) => e.toString()).toSet() ?? <String>{'user'};
+    return (accessToken: access, refreshToken: refresh, userName: name, roles: rolesRaw);
   }
 
   Future<void> logout() async {

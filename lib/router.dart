@@ -1,76 +1,78 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
-// păstrăm shell-ul existent
 import 'widgets/app_shell.dart';
-
-// S1-F2: ecranul de login + state de auth
 import 'screens/login/login_screen.dart';
+import 'screens/projects/projects_list_screen.dart';
+import 'screens/projects/project_detail_screen.dart';
 import 'state/auth_state.dart';
 
-// S1-F3: lista reală de proiecte
-import 'screens/projects/projects_list_screen.dart';
+class ForbiddenScreen extends StatelessWidget {
+  const ForbiddenScreen({super.key});
+  @override
+  Widget build(BuildContext context) =>
+      Center(child: Text('403 — Forbidden', style: Theme.of(context).textTheme.headlineSmall));
+}
 
-/// Router global — protejat de auth; se recreează automat când se schimbă auth state.
+bool _requiresUserRole(String location) {
+  // exemplu: toate rutele din /projects cer rolul 'user'
+  return location.startsWith('/projects');
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authProvider);
 
   return GoRouter(
-    // dacă în proiectul tău era altă rootă inițială, păstreaz-o
     initialLocation: '/dashboard',
-    // dacă aveai observers/redirecturi suplimentare, adaugă-le aici
+    errorBuilder: (context, state) => Scaffold(
+      appBar: AppBar(title: const Text('Navigation error')),
+      body: Center(child: Text(state.error.toString())),
+    ),
     redirect: (context, state) {
-      final loggingIn = state.matchedLocation == '/login';
+      final location = state.matchedLocation;
+      final loggingIn = location == '/login';
+
+      // 1) protecție autentificare
       if (!auth.isAuthenticated) return loggingIn ? null : '/login';
       if (loggingIn) return '/dashboard';
+
+      // 2) guard pe roluri
+      if (_requiresUserRole(location) && !auth.hasRole('user')) {
+        return '/forbidden';
+      }
       return null;
     },
     routes: [
-      // --- public
-      GoRoute(
-        path: '/login',
-        name: 'login',
-        builder: (context, state) => const LoginScreen(),
-      ),
-
-      // --- private (wrap în AppShell)
+      GoRoute(path: '/login', name: 'login', builder: (c, s) => const LoginScreen()),
+      GoRoute(path: '/forbidden', name: 'forbidden', builder: (c, s) => const ForbiddenScreen()),
       ShellRoute(
-        builder: (context, state, child) => AppShell(child: child),
+        builder: (c, s, child) => AppShell(child: child),
         routes: [
+          GoRoute(path: '/dashboard', name: 'dashboard', builder: (c, s) => const _Dashboard()),
+          GoRoute(path: '/projects', name: 'projects', builder: (c, s) => const ProjectsListScreen()),
           GoRoute(
-            path: '/dashboard',
-            name: 'dashboard',
-            builder: (context, state) => const _DashboardScreen(),
-          ),
-          // S1-F3 — listă proiecte (table) + sort/filter basic
-          GoRoute(
-            path: '/projects',
-            name: 'projects',
-            builder: (context, state) => const ProjectsListScreen(),
-          ),
-          // lăsăm placeholder-ele existente până legăm ecranele reale
-          GoRoute(
-            path: '/boards',
-            name: 'boards',
-            builder: (context, state) => const _PlaceholderScreen(title: 'Boards'),
+            path: '/projects/new',
+            name: 'project_new',
+            builder: (c, s) => const ProjectDetailScreen(projectId: 'new'),
           ),
           GoRoute(
-            path: '/files',
-            name: 'files',
-            builder: (context, state) => const _PlaceholderScreen(title: 'Files'),
+            path: '/projects/:id',
+            name: 'project_detail',
+            builder: (c, s) {
+              final id = s.pathParameters['id'];
+              return ProjectDetailScreen(projectId: id);
+            },
           ),
+          GoRoute(path: '/boards', name: 'boards', builder: (c, s) => const _Placeholder('Boards')),
+          GoRoute(path: '/files', name: 'files', builder: (c, s) => const _Placeholder('Files')),
         ],
       ),
     ],
   );
 });
 
-/// --- Ecrane simple „la pachet” (păstrăm stilul din router-ul vechi) ---------
-
-class _DashboardScreen extends ConsumerWidget {
-  const _DashboardScreen();
-
+class _Dashboard extends ConsumerWidget {
+  const _Dashboard();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).userName ?? 'User';
@@ -78,20 +80,15 @@ class _DashboardScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       child: Align(
         alignment: Alignment.topLeft,
-        child: Text('Welcome, $user 👋', style: Theme.of(context).textTheme.headlineSmall),
+        child: Text('Welcome, ' + user + ' 👋', style: Theme.of(context).textTheme.headlineSmall),
       ),
     );
   }
 }
 
-class _PlaceholderScreen extends StatelessWidget {
-  const _PlaceholderScreen({required this.title, super.key});
+class _Placeholder extends StatelessWidget {
   final String title;
-
+  const _Placeholder(this.title, {super.key});
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(title, style: Theme.of(context).textTheme.headlineSmall),
-    );
-  }
+  Widget build(BuildContext context) => Center(child: Text(title, style: Theme.of(context).textTheme.headlineSmall));
 }
