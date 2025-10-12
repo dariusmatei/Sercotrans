@@ -1,36 +1,40 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+generator client {
+  provider = "prisma-client-js"
+}
 
-enum Role { ADMIN MANAGER PM OPERATOR VIEWER }
-enum ProjectStatus { DRAFT IN_PROGRESS IN_REVIEW APPROVED CLOSED }
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  name      String?
-  password  String
-  role      Role     @default(VIEWER)
-  projects  Project[] @relation("UserProjects")
+  name      String
+  roles     String[] @default([])
+  password  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  projects  Project[] @relation("UserProjects")
 }
+
 model Project {
   id        String   @id @default(cuid())
   name      String
-  client    String?
-  status    ProjectStatus @default(DRAFT)
-  owner     User?    @relation("UserProjects", fields: [ownerId], references: [id])
-  ownerId   String?
+  client    String
+  status    String   @default("Draft")
+  owner     String
+  dueDate   DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([name])
 }
-model AuditLog {
+
+model RefreshToken {
   id        String   @id @default(cuid())
-  actorId   String?
-  action    String
-  resource  String?
-  meta      Json?
-  ip        String?
+  userId    String
+  token     String   @unique
   createdAt DateTime @default(now())
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
 }

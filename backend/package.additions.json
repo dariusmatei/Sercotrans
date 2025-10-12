@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "@prisma/client": "^5.19.0",
+    "ioredis": "^5.4.1",
+    "bullmq": "^5.7.8"
+  },
+  "devDependencies": {
+    "prisma": "^5.19.0"
+  },
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:studio": "prisma studio",
+    "db:seed": "ts-node --transpile-only prisma/seed.ts"
+  }
+}
