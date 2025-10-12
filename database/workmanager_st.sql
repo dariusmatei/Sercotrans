@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 11, 2025 at 08:29 PM
+-- Generation Time: Oct 12, 2025 at 01:54 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -52,24 +52,15 @@ CREATE TABLE `categorie_permisiune` (
 
 CREATE TABLE `categorie_sarcina` (
   `id_categorie_sarcina` int(11) NOT NULL,
+  `id_proiect` int(11) NOT NULL,
   `denumire_categorie` varchar(150) NOT NULL,
   `timp_alocat_total_ore` decimal(10,2) DEFAULT 0.00,
   `data_inceput` date DEFAULT NULL,
   `data_scadenta` date DEFAULT NULL,
   `status_timp` enum('eficient','in timp','intarziat') DEFAULT 'in timp',
   `prioritate` int(11) DEFAULT 0,
-  `buget_total` decimal(15,2) DEFAULT 0.00
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `categorie_sarcina_legaturi`
---
-
-CREATE TABLE `categorie_sarcina_legaturi` (
-  `id_categorie_sarcina` int(11) NOT NULL,
-  `id_sarcina` int(11) NOT NULL
+  `buget_total` decimal(15,2) DEFAULT 0.00,
+  `este_template` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -88,6 +79,34 @@ CREATE TABLE `concediu` (
   `status` enum('initiat','in procesare','aprobat','respins') DEFAULT 'initiat',
   `cale_documente` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Triggers `concediu`
+--
+DELIMITER $$
+CREATE TRIGGER `trg_cale_concediu` BEFORE INSERT ON `concediu` FOR EACH ROW BEGIN
+    DECLARE dep VARCHAR(100);
+    DECLARE nume_prenume VARCHAR(150);
+
+    SELECT CONCAT(nume, '_', prenume), departament
+    INTO nume_prenume, dep
+    FROM utilizator
+    WHERE nr_matricol = NEW.nr_matricol;
+
+    SET NEW.cale_documente = CONCAT('DOCUMENTE_ANGAJATI/', dep, '/', nume_prenume, '/CERERI_CONCEDIU/');
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_concediu_utilizate` AFTER UPDATE ON `concediu` FOR EACH ROW BEGIN
+    IF NEW.status = 'aprobata' AND OLD.status != 'aprobata' AND NEW.tip_concediu = 'odihna' THEN
+        UPDATE utilizator
+        SET zile_concediu_utilizate = zile_concediu_utilizate + NEW.nr_zile_calculate
+        WHERE nr_matricol = NEW.nr_matricol;
+    END IF;
+END
+$$
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -118,19 +137,23 @@ CREATE TABLE `proiecte` (
   `data_finalizare_estimata` date DEFAULT NULL,
   `buget_total` decimal(15,2) DEFAULT 0.00,
   `beneficiar` varchar(100) DEFAULT NULL,
-  `cale_documente` varchar(255) DEFAULT NULL
+  `cale_documente` varchar(255) DEFAULT NULL,
+  `este_template` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
 --
--- Table structure for table `proiecte_categorie_sarcina`
+-- Triggers `proiecte`
 --
-
-CREATE TABLE `proiecte_categorie_sarcina` (
-  `id_proiect` int(11) NOT NULL,
-  `id_categorie_sarcina` int(11) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+DELIMITER $$
+CREATE TRIGGER `trg_cale_proiect` BEFORE INSERT ON `proiecte` FOR EACH ROW BEGIN
+    SET NEW.cale_documente = CONCAT(
+        'PROIECTE/',
+        NEW.tip_proiect, '/',
+        NEW.denumire, '/'
+    );
+END
+$$
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -140,6 +163,7 @@ CREATE TABLE `proiecte_categorie_sarcina` (
 
 CREATE TABLE `sarcina` (
   `id_sarcina` int(11) NOT NULL,
+  `id_categorie_sarcina` int(11) NOT NULL,
   `nume_sarcina` varchar(150) NOT NULL,
   `utilizator_responsabil` int(11) DEFAULT NULL,
   `timp_alocat_ore` decimal(10,2) NOT NULL,
@@ -153,6 +177,115 @@ CREATE TABLE `sarcina` (
   `comentarii` text DEFAULT NULL,
   `cale_documente` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Triggers `sarcina`
+--
+DELIMITER $$
+CREATE TRIGGER `trg_calc_indice_performanta` AFTER UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE ore_ramase DECIMAL(10,2);
+    DECLARE zile_ramase DECIMAL(10,2);
+    DECLARE crestere DECIMAL(5,2);
+
+    -- Doar dacă sarcina a fost finalizată și a fost făcută eficient
+    IF NEW.status = 'finalizat' AND NEW.status_timp = 'eficient' THEN
+        SET ore_ramase = GREATEST(NEW.timp_alocat_ore - NEW.timp_utilizat, 0);
+        SET zile_ramase = ore_ramase / 8;
+        SET crestere = zile_ramase * 0.20; -- 20% per zi
+
+        UPDATE utilizator
+        SET indice_performanta = indice_performanta + crestere
+        WHERE nr_matricol = NEW.utilizator_responsabil;
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_calcul_buget_sarcina` BEFORE INSERT ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE salariu_ora_utilizator DECIMAL(10,2);
+    SELECT salariu_ora INTO salariu_ora_utilizator
+    FROM utilizator
+    WHERE nr_matricol = NEW.utilizator_responsabil;
+
+    SET NEW.buget_alocat = salariu_ora_utilizator * NEW.timp_alocat_ore;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_cale_sarcina` BEFORE INSERT ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE v_id_proiect INT;
+    DECLARE v_tip_proiect VARCHAR(50);
+    DECLARE v_nume_proiect VARCHAR(150);
+    DECLARE v_nume_categorie VARCHAR(150);
+    DECLARE v_este_template BOOLEAN;
+
+    -- Verificăm dacă sarcina este legată la o categorie
+    IF NEW.id_categorie_sarcina IS NOT NULL THEN
+
+        --  Preluăm informațiile despre categorie și proiect
+        SELECT 
+            c.id_proiect,
+            p.tip_proiect,
+            p.denumire,
+            p.este_template,
+            c.denumire_categorie
+        INTO 
+            v_id_proiect,
+            v_tip_proiect,
+            v_nume_proiect,
+            v_este_template,
+            v_nume_categorie
+        FROM categorie_sarcina c
+        JOIN proiecte p ON p.id_proiect = c.id_proiect
+        WHERE c.id_categorie_sarcina = NEW.id_categorie_sarcina
+        LIMIT 1;
+
+        --  Verificăm dacă proiectul nu este template
+        IF v_este_template = FALSE THEN
+            --  Construim calea documentelor
+                  SET NEW.cale_documente = CONCAT(
+                        'PROIECTE/',
+                v_tip_proiect, '/',
+                v_nume_proiect, '/',
+                v_nume_categorie, '/',
+                NEW.nume_sarcina, '/'
+                  );
+        	ELSE
+              -- Pentru template-uri, nu generăm cale
+            SET NEW.cale_documente = NULL;
+        END IF;
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_status_timp_eficient` BEFORE UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    IF NEW.status = 'finalizat' AND NEW.timp_utilizat < NEW.timp_alocat_ore THEN
+        SET NEW.status_timp = 'eficient';
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_status_timp_intarziat` BEFORE UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    IF NEW.timp_utilizat > NEW.timp_alocat_ore AND NEW.status <> 'finalizat' THEN
+        SET NEW.status_timp = 'intarziat';
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_buget_sarcina` BEFORE UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE salariu_ora_utilizator DECIMAL(10,2);
+    IF NEW.utilizator_responsabil != OLD.utilizator_responsabil OR NEW.timp_alocat_ore != OLD.timp_alocat_ore THEN
+        SELECT salariu_ora INTO salariu_ora_utilizator
+        FROM utilizator
+        WHERE nr_matricol = NEW.utilizator_responsabil;
+        SET NEW.buget_alocat = salariu_ora_utilizator * NEW.timp_alocat_ore;
+    END IF;
+END
+$$
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -179,6 +312,20 @@ CREATE TABLE `utilizator` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
+-- Triggers `utilizator`
+--
+DELIMITER $$
+CREATE TRIGGER `trg_cale_utilizator` BEFORE INSERT ON `utilizator` FOR EACH ROW BEGIN
+    SET NEW.cale_documente = CONCAT(
+        'DOCUMENTE_ANGAJATI/',
+        NEW.departament, '/',
+        NEW.nume, '_', NEW.prenume, '/'
+    );
+END
+$$
+DELIMITER ;
+
+--
 -- Indexes for dumped tables
 --
 
@@ -199,14 +346,8 @@ ALTER TABLE `categorie_permisiune`
 -- Indexes for table `categorie_sarcina`
 --
 ALTER TABLE `categorie_sarcina`
-  ADD PRIMARY KEY (`id_categorie_sarcina`);
-
---
--- Indexes for table `categorie_sarcina_legaturi`
---
-ALTER TABLE `categorie_sarcina_legaturi`
-  ADD PRIMARY KEY (`id_categorie_sarcina`,`id_sarcina`),
-  ADD KEY `id_sarcina` (`id_sarcina`);
+  ADD PRIMARY KEY (`id_categorie_sarcina`),
+  ADD KEY `fk_categorie_proiect` (`id_proiect`);
 
 --
 -- Indexes for table `concediu`
@@ -229,18 +370,12 @@ ALTER TABLE `proiecte`
   ADD KEY `manager_responsabil` (`manager_responsabil`);
 
 --
--- Indexes for table `proiecte_categorie_sarcina`
---
-ALTER TABLE `proiecte_categorie_sarcina`
-  ADD PRIMARY KEY (`id_proiect`,`id_categorie_sarcina`),
-  ADD KEY `id_categorie_sarcina` (`id_categorie_sarcina`);
-
---
 -- Indexes for table `sarcina`
 --
 ALTER TABLE `sarcina`
   ADD PRIMARY KEY (`id_sarcina`),
-  ADD KEY `utilizator_responsabil` (`utilizator_responsabil`);
+  ADD KEY `utilizator_responsabil` (`utilizator_responsabil`),
+  ADD KEY `fk_sarcina_categorie` (`id_categorie_sarcina`);
 
 --
 -- Indexes for table `utilizator`
@@ -303,11 +438,10 @@ ALTER TABLE `categorie_permisiune`
   ADD CONSTRAINT `categorie_permisiune_ibfk_2` FOREIGN KEY (`id_permisiune`) REFERENCES `permisiune` (`id_permisiune`);
 
 --
--- Constraints for table `categorie_sarcina_legaturi`
+-- Constraints for table `categorie_sarcina`
 --
-ALTER TABLE `categorie_sarcina_legaturi`
-  ADD CONSTRAINT `categorie_sarcina_legaturi_ibfk_1` FOREIGN KEY (`id_categorie_sarcina`) REFERENCES `categorie_sarcina` (`id_categorie_sarcina`),
-  ADD CONSTRAINT `categorie_sarcina_legaturi_ibfk_2` FOREIGN KEY (`id_sarcina`) REFERENCES `sarcina` (`id_sarcina`);
+ALTER TABLE `categorie_sarcina`
+  ADD CONSTRAINT `fk_categorie_proiect` FOREIGN KEY (`id_proiect`) REFERENCES `proiecte` (`id_proiect`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `concediu`
@@ -322,16 +456,10 @@ ALTER TABLE `proiecte`
   ADD CONSTRAINT `proiecte_ibfk_1` FOREIGN KEY (`manager_responsabil`) REFERENCES `utilizator` (`nr_matricol`);
 
 --
--- Constraints for table `proiecte_categorie_sarcina`
---
-ALTER TABLE `proiecte_categorie_sarcina`
-  ADD CONSTRAINT `proiecte_categorie_sarcina_ibfk_1` FOREIGN KEY (`id_proiect`) REFERENCES `proiecte` (`id_proiect`),
-  ADD CONSTRAINT `proiecte_categorie_sarcina_ibfk_2` FOREIGN KEY (`id_categorie_sarcina`) REFERENCES `categorie_sarcina` (`id_categorie_sarcina`);
-
---
 -- Constraints for table `sarcina`
 --
 ALTER TABLE `sarcina`
+  ADD CONSTRAINT `fk_sarcina_categorie` FOREIGN KEY (`id_categorie_sarcina`) REFERENCES `categorie_sarcina` (`id_categorie_sarcina`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `sarcina_ibfk_1` FOREIGN KEY (`utilizator_responsabil`) REFERENCES `utilizator` (`nr_matricol`);
 
 --
