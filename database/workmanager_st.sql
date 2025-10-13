@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 13, 2025 at 10:38 PM
+-- Generation Time: Oct 14, 2025 at 01:01 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -109,7 +109,8 @@ CREATE TABLE `categorie_sarcina` (
   `data_scadenta` date DEFAULT NULL,
   `status_timp` enum('eficient','in timp','intarziat') DEFAULT 'in timp',
   `prioritate` int(11) DEFAULT 0,
-  `buget_total` decimal(15,2) DEFAULT 0.00,
+  `buget_alocat` decimal(15,2) DEFAULT 0.00,
+  `buget_efectiv` decimal(15,2) DEFAULT 0.00,
   `este_template` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -160,10 +161,27 @@ END
 $$
 DELIMITER ;
 DELIMITER $$
+CREATE TRIGGER `trg_scade_zile_concediu_delete` AFTER DELETE ON `concediu` FOR EACH ROW BEGIN
+    -- Verificăm dacă concediul șters era de tip 'odihna' și aprobat
+    IF OLD.status = 'aprobat' AND OLD.tip_concediu = 'odihna' THEN
+        UPDATE utilizator
+        SET zile_concediu_utilizate = GREATEST(zile_concediu_utilizate - OLD.nr_zile_calculate, 0)
+        WHERE nr_matricol = OLD.nr_matricol;
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
 CREATE TRIGGER `trg_update_concediu_utilizate` AFTER UPDATE ON `concediu` FOR EACH ROW BEGIN
     IF NEW.status = 'aprobat' AND OLD.status != 'aprobat' AND NEW.tip_concediu = 'odihna' THEN
         UPDATE utilizator
         SET zile_concediu_utilizate = zile_concediu_utilizate + NEW.nr_zile_calculate
+        WHERE nr_matricol = NEW.nr_matricol;
+    END IF;
+    
+    IF OLD.status = 'aprobat' AND NEW.status != 'aprobat' AND NEW.tip_concediu = 'odihna' THEN
+        UPDATE utilizator
+        SET zile_concediu_utilizate = GREATEST(zile_concediu_utilizate - OLD.nr_zile_calculate, 0)
         WHERE nr_matricol = NEW.nr_matricol;
     END IF;
 END
@@ -197,7 +215,8 @@ CREATE TABLE `proiecte` (
   `timp_alocat_total_ore` decimal(10,2) DEFAULT 0.00,
   `data_inceput` date DEFAULT NULL,
   `data_finalizare_estimata` date DEFAULT NULL,
-  `buget_total` decimal(15,2) DEFAULT 0.00,
+  `buget_alocat` decimal(15,2) DEFAULT 0.00,
+  `buget_efectiv` decimal(15,2) DEFAULT 0.00,
   `beneficiar` varchar(100) DEFAULT NULL,
   `cale_documente` varchar(255) DEFAULT NULL,
   `este_template` tinyint(1) DEFAULT 0
@@ -225,32 +244,30 @@ DELIMITER ;
 
 CREATE TABLE `sarbatori_legale` (
   `data_sarbatoare` date NOT NULL,
-  `descriere` varchar(100) DEFAULT NULL
+  `descriere` varchar(100) DEFAULT NULL,
+  `este_constanta` tinyint(1) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `sarbatori_legale`
 --
 
-INSERT INTO `sarbatori_legale` (`data_sarbatoare`, `descriere`) VALUES
-('2025-01-01', 'Anul Nou'),
-('2025-01-02', 'Anul Nou'),
-('2025-01-06', 'Boboteaza'),
-('2025-01-07', 'Sfantul Ioan Botezatorul'),
-('2025-01-24', 'Ziua Unirii Principatelor Romane'),
-('2025-04-18', 'Vinerea Mare - Paste Ortodox'),
-('2025-04-19', 'Sambata Mare - Paste Ortodox'),
-('2025-04-20', 'Paste Ortodox'),
-('2025-04-21', 'A doua zi de Paste Ortodox'),
-('2025-05-01', 'Ziua Muncii'),
-('2025-06-01', 'Ziua Copilului'),
-('2025-06-08', 'Rusalii'),
-('2025-06-09', 'A doua zi de Rusalii'),
-('2025-08-15', 'Adormirea Maicii Domnului'),
-('2025-11-30', 'Sfantul Andrei'),
-('2025-12-01', 'Ziua Nationala a Romaniei'),
-('2025-12-25', 'Craciunul'),
-('2025-12-26', 'A doua zi de Craciun');
+INSERT INTO `sarbatori_legale` (`data_sarbatoare`, `descriere`, `este_constanta`) VALUES
+('2025-01-01', 'Anul Nou', 1),
+('2025-01-02', 'Anul Nou', 1),
+('2025-01-06', 'Boboteaza', 1),
+('2025-01-07', 'Sfantul Ioan Botezatorul', 1),
+('2025-01-24', 'Ziua Unirii Principatelor Romane', 1),
+('2025-04-18', 'Vinerea Mare - Paste Ortodox', 0),
+('2025-04-21', 'A doua zi de Paste Ortodox', 0),
+('2025-05-01', 'Ziua Muncii', 1),
+('2025-06-01', 'Ziua Copilului', 1),
+('2025-06-09', 'A doua zi de Rusalii', 0),
+('2025-08-15', 'Adormirea Maicii Domnului', 1),
+('2025-11-30', 'Sfantul Andrei', 1),
+('2025-12-01', 'Ziua Nationala a Romaniei', 1),
+('2025-12-25', 'Craciunul', 1),
+('2025-12-26', 'A doua zi de Craciun', 1);
 
 -- --------------------------------------------------------
 
@@ -268,6 +285,7 @@ CREATE TABLE `sarcina` (
   `data_estimata_finalizare` date DEFAULT NULL,
   `timp_utilizat` decimal(10,2) DEFAULT 0.00,
   `buget_alocat` decimal(15,2) DEFAULT NULL,
+  `buget_efectiv` decimal(15,2) DEFAULT 0.00,
   `status` enum('in planificare','in lucru','blocat','clarificare','verificare','finalizat') DEFAULT 'in planificare',
   `prioritate` int(11) DEFAULT 0,
   `status_timp` enum('eficient','in timp','intarziat') DEFAULT 'in timp',
@@ -305,6 +323,34 @@ CREATE TRIGGER `trg_calcul_buget_sarcina` BEFORE INSERT ON `sarcina` FOR EACH RO
     WHERE nr_matricol = NEW.utilizator_responsabil;
 
     SET NEW.buget_alocat = salariu_ora_utilizator * NEW.timp_alocat_ore;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_calculeaza_buget_efectiv_insert` BEFORE INSERT ON `sarcina` FOR EACH ROW BEGIN
+    IF NEW.utilizator_responsabil IS NOT NULL THEN
+        SET NEW.buget_efectiv = (
+            SELECT IFNULL(salariu_ora, 0) * NEW.timp_utilizat
+            FROM utilizator
+            WHERE nr_matricol = NEW.utilizator_responsabil
+        );
+    ELSE
+        SET NEW.buget_efectiv = 0;
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_calculeaza_buget_efectiv_update` BEFORE UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    IF NEW.utilizator_responsabil IS NOT NULL THEN
+        SET NEW.buget_efectiv = (
+            SELECT IFNULL(salariu_ora, 0) * NEW.timp_utilizat
+            FROM utilizator
+            WHERE nr_matricol = NEW.utilizator_responsabil
+        );
+    ELSE
+        SET NEW.buget_efectiv = 0;
+    END IF;
 END
 $$
 DELIMITER ;
@@ -365,7 +411,7 @@ $$
 DELIMITER ;
 DELIMITER $$
 CREATE TRIGGER `trg_status_timp_intarziat` BEFORE UPDATE ON `sarcina` FOR EACH ROW BEGIN
-    IF NEW.timp_utilizat > NEW.timp_alocat_ore AND NEW.status <> 'finalizat' THEN
+    IF NEW.timp_utilizat > NEW.timp_alocat_ore THEN
         SET NEW.status_timp = 'intarziat';
     END IF;
 END
