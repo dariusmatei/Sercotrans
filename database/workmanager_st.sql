@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 12, 2025 at 01:54 AM
+-- Generation Time: Oct 13, 2025 at 10:38 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -20,6 +20,56 @@ SET time_zone = "+00:00";
 --
 -- Database: `workmanager_st`
 --
+
+DELIMITER $$
+--
+-- Functions
+--
+CREATE DEFINER=`root`@`localhost` FUNCTION `fn_calculeaza_zile_lucratoare` (`data_inceput` DATE, `data_sfarsit` DATE) RETURNS INT(11)  BEGIN
+    DECLARE total_zile INT;
+    DECLARE saptamani_complete INT;
+    DECLARE zile_extra INT;
+    DECLARE nr_weekenduri INT;
+    DECLARE contor INT;
+    DECLARE zi_curenta INT;
+    DECLARE nr_sarbatori INT;
+
+    -- Dacă datele nu sunt valide
+    IF data_inceput IS NULL OR data_sfarsit IS NULL OR data_sfarsit < data_inceput THEN
+        RETURN 0;
+    END IF;
+
+    -- Calculăm numărul total de zile calendaristice
+    SET total_zile = DATEDIFF(data_sfarsit, data_inceput) + 1;
+
+    -- Numărul de săptămâni complete (fiecare are 2 zile de weekend)
+    SET saptamani_complete = total_zile DIV 7;
+    SET nr_weekenduri = saptamani_complete * 2;
+
+    -- Calculăm câte zile rămân după săptămânile complete (0–6 zile)
+    SET zile_extra = total_zile - saptamani_complete * 7;
+    SET contor = 0;
+
+    -- Verificăm câte din zilele rămase sunt weekenduri
+    WHILE contor < zile_extra DO
+        SET zi_curenta = WEEKDAY(DATE_ADD(data_inceput, INTERVAL contor DAY));  -- 0=Luni ... 6=Duminică
+        IF zi_curenta IN (5,6) THEN
+            SET nr_weekenduri = nr_weekenduri + 1;
+        END IF;
+        SET contor = contor + 1;
+    END WHILE;
+
+    -- Numărăm sărbătorile legale din tabel care se află în interval și care NU cad în weekend
+    SELECT COUNT(*) INTO nr_sarbatori
+    FROM sarbatori_legale
+    WHERE data_sarbatoare BETWEEN data_inceput AND data_sfarsit
+      AND WEEKDAY(data_sarbatoare) NOT IN (5,6);
+
+    -- Rezultatul final = total zile - weekenduri - sărbători legale
+    RETURN total_zile - nr_weekenduri - IFNULL(nr_sarbatori, 0);
+END$$
+
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -75,7 +125,7 @@ CREATE TABLE `concediu` (
   `tip_concediu` enum('medical','invoire','maternal','special','odihna','altele') NOT NULL,
   `data_inceput` date NOT NULL,
   `data_sfarsit` date NOT NULL,
-  `nr_zile_calculate` int(11) GENERATED ALWAYS AS (to_days(`data_sfarsit`) - to_days(`data_inceput`) + 1) STORED,
+  `nr_zile_calculate` int(11) DEFAULT 0,
   `status` enum('initiat','in procesare','aprobat','respins') DEFAULT 'initiat',
   `cale_documente` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -98,8 +148,20 @@ END
 $$
 DELIMITER ;
 DELIMITER $$
+CREATE TRIGGER `trg_nr_zile_concediu_before_insert` BEFORE INSERT ON `concediu` FOR EACH ROW BEGIN
+    SET NEW.nr_zile_calculate = fn_calculeaza_zile_lucratoare(NEW.data_inceput, NEW.data_sfarsit);
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_nr_zile_concediu_before_update` BEFORE UPDATE ON `concediu` FOR EACH ROW BEGIN
+    SET NEW.nr_zile_calculate = fn_calculeaza_zile_lucratoare(NEW.data_inceput, NEW.data_sfarsit);
+END
+$$
+DELIMITER ;
+DELIMITER $$
 CREATE TRIGGER `trg_update_concediu_utilizate` AFTER UPDATE ON `concediu` FOR EACH ROW BEGIN
-    IF NEW.status = 'aprobata' AND OLD.status != 'aprobata' AND NEW.tip_concediu = 'odihna' THEN
+    IF NEW.status = 'aprobat' AND OLD.status != 'aprobat' AND NEW.tip_concediu = 'odihna' THEN
         UPDATE utilizator
         SET zile_concediu_utilizate = zile_concediu_utilizate + NEW.nr_zile_calculate
         WHERE nr_matricol = NEW.nr_matricol;
@@ -154,6 +216,41 @@ CREATE TRIGGER `trg_cale_proiect` BEFORE INSERT ON `proiecte` FOR EACH ROW BEGIN
 END
 $$
 DELIMITER ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `sarbatori_legale`
+--
+
+CREATE TABLE `sarbatori_legale` (
+  `data_sarbatoare` date NOT NULL,
+  `descriere` varchar(100) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `sarbatori_legale`
+--
+
+INSERT INTO `sarbatori_legale` (`data_sarbatoare`, `descriere`) VALUES
+('2025-01-01', 'Anul Nou'),
+('2025-01-02', 'Anul Nou'),
+('2025-01-06', 'Boboteaza'),
+('2025-01-07', 'Sfantul Ioan Botezatorul'),
+('2025-01-24', 'Ziua Unirii Principatelor Romane'),
+('2025-04-18', 'Vinerea Mare - Paste Ortodox'),
+('2025-04-19', 'Sambata Mare - Paste Ortodox'),
+('2025-04-20', 'Paste Ortodox'),
+('2025-04-21', 'A doua zi de Paste Ortodox'),
+('2025-05-01', 'Ziua Muncii'),
+('2025-06-01', 'Ziua Copilului'),
+('2025-06-08', 'Rusalii'),
+('2025-06-09', 'A doua zi de Rusalii'),
+('2025-08-15', 'Adormirea Maicii Domnului'),
+('2025-11-30', 'Sfantul Andrei'),
+('2025-12-01', 'Ziua Nationala a Romaniei'),
+('2025-12-25', 'Craciunul'),
+('2025-12-26', 'A doua zi de Craciun');
 
 -- --------------------------------------------------------
 
@@ -368,6 +465,12 @@ ALTER TABLE `permisiune`
 ALTER TABLE `proiecte`
   ADD PRIMARY KEY (`id_proiect`),
   ADD KEY `manager_responsabil` (`manager_responsabil`);
+
+--
+-- Indexes for table `sarbatori_legale`
+--
+ALTER TABLE `sarbatori_legale`
+  ADD PRIMARY KEY (`data_sarbatoare`);
 
 --
 -- Indexes for table `sarcina`
