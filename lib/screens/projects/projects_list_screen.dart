@@ -57,7 +57,7 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
                       ),
                     ),
                     DropdownButtonFormField<String>(
-                      value: vm.filter.status.isEmpty ? null : vm.filter.status,
+                      initialValue: vm.filter.status.isEmpty ? null : vm.filter.status,
                       items: const [
                         DropdownMenuItem(value: 'Draft', child: Text('Draft')),
                         DropdownMenuItem(value: 'InProgress', child: Text('In progress')),
@@ -219,17 +219,17 @@ class _StatusBadge extends StatelessWidget {
     Color bg;
     switch (status.toLowerCase()) {
       case 'approved':
-        bg = Colors.green.withOpacity(0.15);
+        bg = Colors.green.withAlpha(38);
         break;
       case 'inprogress':
       case 'in progress':
-        bg = Colors.blue.withOpacity(0.15);
+        bg = Colors.blue.withAlpha(38);
         break;
       case 'closed':
-        bg = Colors.grey.withOpacity(0.15);
+        bg = Colors.grey.withAlpha(38);
         break;
       default:
-        bg = Colors.orange.withOpacity(0.15);
+        bg = Colors.orange.withAlpha(38);
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

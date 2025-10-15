@@ -57,7 +57,7 @@ class ProjectsApi {
     DateTime? dueDate,
   }) async {
     try {
-      final resp = await client.dio.post('/projects', data: {
+      final resp = await this.client.dio.post('/projects', data: {
         'name': name,
         'client': client,
         'status': status,

@@ -112,7 +112,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<String>(
-                          value: _status.isEmpty ? 'Draft' : _status,
+                          initialValue: _status.isEmpty ? 'Draft' : _status,
                           items: const [
                             DropdownMenuItem(value: 'Draft', child: Text('Draft')),
                             DropdownMenuItem(value: 'InProgress', child: Text('In progress')),
