@@ -2,7 +2,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'token_store.dart';
 
 class TokenStoreImpl implements TokenStore {
-  static const _kAccess = 'access_token';
   static const _kRefresh = 'refresh_token';
   String? _accessInMemory;
 

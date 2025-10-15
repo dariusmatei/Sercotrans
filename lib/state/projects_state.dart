@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../api/api_client.dart';
 import '../api/projects_api.dart';
 import '../models/project.dart';
+import 'auth_state.dart';
 
 enum ProjectSort { name, client, status, owner, dueDate }
 

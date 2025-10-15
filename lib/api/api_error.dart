@@ -13,12 +13,15 @@ class ApiError implements Exception {
 
   static ApiError fromDio(DioException e) {
     // Mapăm timeouts și network
-    if (e.type == DioExceptionType.connectionTimeout or e.type == DioExceptionType.sendTimeout or e.type == DioExceptionType.receiveTimeout):
+    if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.sendTimeout || e.type == DioExceptionType.receiveTimeout) {
       return ApiError('timeout', 'Conexiunea a expirat. Încearcă din nou.', status: e.response?.statusCode);
-    if (e.type == DioExceptionType.connectionError):
+    }
+    if (e.type == DioExceptionType.connectionError) {
       return ApiError('network', 'Conexiune indisponibilă.', status: e.response?.statusCode);
-    if (e.type == DioExceptionType.cancel):
+    }
+    if (e.type == DioExceptionType.cancel) {
       return ApiError('unknown', 'Operațiune anulată.');
+    }
 
     // Răspuns de la server
     final status = e.response?.statusCode;
@@ -29,9 +32,15 @@ class ApiError implements Exception {
 
     // Încearcă parse generic: { message } | RFC7807: { title, detail, errors }
     if (data is Map) {
-      if (data['message'] is String) msg = data['message'];
-      if (data['detail'] is String) msg = data['detail'];
-      if (data['error'] is String) msg = data['error'];
+      if (data['message'] is String) {
+        msg = data['message'];
+      }
+      if (data['detail'] is String) {
+        msg = data['detail'];
+      }
+      if (data['error'] is String) {
+        msg = data['error'];
+      }
       if (data['title'] is String && (data['detail'] is String)) {
         msg = data['title'] + ': ' + data['detail'];
       }
@@ -46,7 +55,7 @@ class ApiError implements Exception {
           }
         });
       }
-    } else if (data is String && data.strip() != '') {
+    } else if (data is String && data.trim() != '') {
       msg = data;
     } else if (e.message != null) {
       msg = e.message!;

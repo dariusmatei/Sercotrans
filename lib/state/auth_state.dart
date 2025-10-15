@@ -47,13 +47,14 @@ final authApiProvider = Provider<AuthApi>((ref) => AuthApi(ref.watch(apiClientPr
 class AuthController extends StateNotifier<AuthState> {
   final AuthApi _api;
   final ApiClient _client;
+  final TokenStore _store;
 
-  AuthController(this._api, this._client) : super(AuthState.initial) {
+  AuthController(this._api, this._client, this._store) : super(AuthState.initial) {
     _markAuthenticatedIfPossible();
   }
 
   Future<void> _markAuthenticatedIfPossible() async {
-    final tokens = await _client._store.readTokens();
+    final tokens = await _store.readTokens();
     final hasRefresh = (tokens['refresh'] ?? '').isNotEmpty;
     if (hasRefresh) {
       state = state.copyWith(isAuthenticated: true);
@@ -80,5 +81,5 @@ class AuthController extends StateNotifier<AuthState> {
 }
 
 final authProvider = StateNotifierProvider<AuthController, AuthState>((ref) {
-  return AuthController(ref.watch(authApiProvider), ref.watch(apiClientProvider));
+  return AuthController(ref.watch(authApiProvider), ref.watch(apiClientProvider), ref.watch(tokenStoreProvider));
 });

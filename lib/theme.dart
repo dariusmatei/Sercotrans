@@ -24,7 +24,7 @@ class AppTheme {
         foregroundColor: scheme.onSurface,
         centerTitle: false,
       ),
-      cardTheme: const CardTheme(
+      cardTheme: const CardThemeData(
         elevation: 1,
         margin: EdgeInsets.all(12),
         clipBehavior: Clip.antiAlias,

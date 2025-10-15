@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'auth_state.dart';
 import '../api/projects_api.dart';
-import '../api/api_client.dart';
 import '../models/project.dart';
 
 final projectsApiProvider = Provider<ProjectsApi>((ref) {

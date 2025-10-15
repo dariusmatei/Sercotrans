@@ -87,7 +87,7 @@ class ProjectsApi {
 
   Future<void> delete(String id) async {
     try {
-      await client.dio.delete('/projects/' + id);
+      await this.client.dio.delete('/projects/' + id);
     } on DioException catch (e) {
       throw ApiError.fromDio(e);
     }

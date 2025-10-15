@@ -40,9 +40,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     }
 
     final p = vm.project ?? const Project(id: '', name: '', client: '', status: 'Draft', owner: '');
-    _name.value = TextEditingValue(text: p.name);
-    _client.value = TextEditingValue(text: p.client);
-    _owner.value = TextEditingValue(text: p.owner);
+    _name.text = p.name;
+    _client.text = p.client;
+    _owner.text = p.owner;
     _status = p.status;
     _due = p.dueDate;
 

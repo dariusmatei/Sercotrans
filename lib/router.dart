@@ -88,7 +88,7 @@ class _Dashboard extends ConsumerWidget {
 
 class _Placeholder extends StatelessWidget {
   final String title;
-  const _Placeholder(this.title, {super.key});
+  const _Placeholder(this.title);
   @override
   Widget build(BuildContext context) => Center(child: Text(title, style: Theme.of(context).textTheme.headlineSmall));
 }
