@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 14, 2025 at 01:01 AM
+-- Generation Time: Oct 16, 2025 at 10:34 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -23,8 +23,139 @@ SET time_zone = "+00:00";
 
 DELIMITER $$
 --
+-- Procedures
+--
+CREATE DEFINER=`root`@`localhost` PROCEDURE `clonare_proiect_template` (IN `p_id_template` INT, IN `p_denumire_nou_proiect` VARCHAR(150), OUT `p_id_nou_proiect` INT)   BEGIN
+    DECLARE done INT DEFAULT 0;
+    DECLARE v_id_categorie_template INT;
+    DECLARE v_denumire_categorie VARCHAR(150);
+    DECLARE v_timp_alocat DECIMAL(10,2);
+    DECLARE v_prioritate INT;
+    DECLARE v_buget_alocat DECIMAL(15,2);
+    DECLARE cur_categorii CURSOR FOR
+        SELECT id_categorie_sarcina, denumire_categorie, timp_alocat_total_ore, prioritate, buget_alocat
+        FROM categorie_sarcina
+        WHERE id_proiect = p_id_template;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+
+    -- Creăm noul proiect, copiem doar tip_proiect, timp_alocat_total_ore și buget_alocat
+    INSERT INTO proiecte (denumire, tip_proiect, timp_alocat_total_ore, buget_alocat, buget_efectiv, este_template)
+    SELECT p_denumire_nou_proiect, tip_proiect, timp_alocat_total_ore, buget_alocat, 0, 0
+    FROM proiecte
+    WHERE id_proiect = p_id_template;
+
+    SET p_id_nou_proiect = LAST_INSERT_ID();
+
+    -- Iterăm prin categoriile template-ului
+    OPEN cur_categorii;
+    read_loop: LOOP
+        FETCH cur_categorii INTO v_id_categorie_template, v_denumire_categorie, v_timp_alocat, v_prioritate, v_buget_alocat;
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+
+        -- Creăm categoria nouă pentru proiectul nou
+        INSERT INTO categorie_sarcina (id_proiect, denumire_categorie, timp_alocat_total_ore, prioritate, buget_alocat)
+        VALUES (p_id_nou_proiect, v_denumire_categorie, v_timp_alocat, v_prioritate, v_buget_alocat);
+
+        SET @v_noua_categorie_id = LAST_INSERT_ID();
+
+        -- Clonăm sarcinile din categoria template în categoria nou creată, copiem doar nume_sarcina, timp_alocat_ore, buget_alocat, prioritate
+        INSERT INTO sarcina (id_categorie_sarcina, nume_sarcina, timp_alocat_ore, buget_alocat, prioritate)
+        SELECT @v_noua_categorie_id, nume_sarcina, timp_alocat_ore, buget_alocat, prioritate
+        FROM sarcina
+        WHERE id_categorie_sarcina = v_id_categorie_template;
+
+    END LOOP;
+    CLOSE cur_categorii;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_actualizeaza_statistici` (IN `p_id_categorie_sarcina` INT)   BEGIN
+    DECLARE v_id_proiect INT;
+
+    -- Actualizare bugete pentru categoria de sarcini
+    UPDATE categorie_sarcina cs
+    SET 
+        cs.timp_alocat_total_ore = IFNULL((
+            SELECT SUM(s.timp_alocat_ore)
+            FROM sarcina s
+            WHERE s.id_categorie_sarcina = cs.id_categorie_sarcina
+        ), 0),
+        cs.timp_utilizat_total_ore = IFNULL((
+            SELECT SUM(s.timp_utilizat)
+            FROM sarcina s
+            WHERE s.id_categorie_sarcina = cs.id_categorie_sarcina
+        ), 0),
+        cs.buget_alocat = IFNULL((
+            SELECT SUM(s.buget_alocat)
+            FROM sarcina s
+            WHERE s.id_categorie_sarcina = cs.id_categorie_sarcina
+        ), 0),
+        cs.buget_efectiv = IFNULL((
+            SELECT SUM(s.buget_efectiv)
+            FROM sarcina s
+            WHERE s.id_categorie_sarcina = cs.id_categorie_sarcina
+        ), 0)
+    WHERE cs.id_categorie_sarcina = p_id_categorie_sarcina;
+
+    -- Preluăm proiectul asociat categoriei
+    SELECT id_proiect INTO v_id_proiect
+    FROM categorie_sarcina
+    WHERE id_categorie_sarcina = p_id_categorie_sarcina;
+
+    -- Actualizare bugete pentru proiectul respectiv
+    UPDATE proiecte p
+    SET 
+        p.timp_alocat_total_ore = IFNULL((
+            SELECT SUM(cs.timp_alocat_total_ore)
+            FROM categorie_sarcina cs
+            WHERE cs.id_proiect = p.id_proiect
+        ), 0),
+        p.buget_alocat = IFNULL((
+            SELECT SUM(cs.buget_alocat)
+            FROM categorie_sarcina cs
+            WHERE cs.id_proiect = p.id_proiect
+        ), 0),
+        p.timp_utilizat_total_ore = IFNULL((
+            SELECT SUM(cs.timp_utilizat_total_ore)
+            FROM categorie_sarcina cs
+            WHERE cs.id_proiect = p.id_proiect
+        ), 0),
+        p.buget_efectiv = IFNULL((
+            SELECT SUM(cs.buget_efectiv)
+            FROM categorie_sarcina cs
+            WHERE cs.id_proiect = p.id_proiect
+        ), 0)
+    WHERE p.id_proiect = v_id_proiect;
+END$$
+
+--
 -- Functions
 --
+CREATE DEFINER=`root`@`localhost` FUNCTION `calculeaza_data_finalizare_estimata` (`p_data_start` DATE, `p_timp_alocat_ore` INT) RETURNS DATE DETERMINISTIC BEGIN
+    DECLARE v_zile_necesare INT;
+    DECLARE v_data_curenta DATE;
+    DECLARE v_zile_adaugate INT DEFAULT 0;
+
+    -- Calculăm numărul de zile lucrătoare necesare
+    SET v_zile_necesare = CEIL(p_timp_alocat_ore / 8);
+    SET v_data_curenta = p_data_start;
+
+    -- Parcurgem zilele până când avem suficiente zile lucrătoare
+    WHILE v_zile_adaugate < v_zile_necesare DO
+        SET v_data_curenta = DATE_ADD(v_data_curenta, INTERVAL 1 DAY);
+
+        -- verificăm dacă ziua curentă este sâmbătă sau duminică
+        IF DAYOFWEEK(v_data_curenta) NOT IN (1, 7)
+           AND v_data_curenta NOT IN (SELECT data_sarbatoare FROM sarbatori_legale)
+        THEN
+            SET v_zile_adaugate = v_zile_adaugate + 1;
+        END IF;
+    END WHILE;
+
+    RETURN v_data_curenta;
+END$$
+
 CREATE DEFINER=`root`@`localhost` FUNCTION `fn_calculeaza_zile_lucratoare` (`data_inceput` DATE, `data_sfarsit` DATE) RETURNS INT(11)  BEGIN
     DECLARE total_zile INT;
     DECLARE saptamani_complete INT;
@@ -105,8 +236,10 @@ CREATE TABLE `categorie_sarcina` (
   `id_proiect` int(11) NOT NULL,
   `denumire_categorie` varchar(150) NOT NULL,
   `timp_alocat_total_ore` decimal(10,2) DEFAULT 0.00,
+  `timp_utilizat_total_ore` decimal(10,2) DEFAULT 0.00,
   `data_inceput` date DEFAULT NULL,
-  `data_scadenta` date DEFAULT NULL,
+  `data_finalizare_estimata` date DEFAULT NULL,
+  `data_finalizare_efectiva` date DEFAULT NULL,
   `status_timp` enum('eficient','in timp','intarziat') DEFAULT 'in timp',
   `prioritate` int(11) DEFAULT 0,
   `buget_alocat` decimal(15,2) DEFAULT 0.00,
@@ -213,8 +346,10 @@ CREATE TABLE `proiecte` (
   `stadiu` enum('definire','ofertare','licitatie','respins','executie','asistenta tehnica','arhivare') DEFAULT 'definire',
   `manager_responsabil` int(11) DEFAULT NULL,
   `timp_alocat_total_ore` decimal(10,2) DEFAULT 0.00,
+  `timp_utilizat_total_ore` decimal(10,2) DEFAULT 0.00,
   `data_inceput` date DEFAULT NULL,
   `data_finalizare_estimata` date DEFAULT NULL,
+  `data_finalizare_efectiva` date DEFAULT NULL,
   `buget_alocat` decimal(15,2) DEFAULT 0.00,
   `buget_efectiv` decimal(15,2) DEFAULT 0.00,
   `beneficiar` varchar(100) DEFAULT NULL,
@@ -282,7 +417,8 @@ CREATE TABLE `sarcina` (
   `utilizator_responsabil` int(11) DEFAULT NULL,
   `timp_alocat_ore` decimal(10,2) NOT NULL,
   `data_inceput` date DEFAULT NULL,
-  `data_estimata_finalizare` date DEFAULT NULL,
+  `data_finalizare_estimata` date DEFAULT NULL,
+  `data_finalizare_efectiva` date DEFAULT NULL,
   `timp_utilizat` decimal(10,2) DEFAULT 0.00,
   `buget_alocat` decimal(15,2) DEFAULT NULL,
   `buget_efectiv` decimal(15,2) DEFAULT 0.00,
@@ -350,6 +486,15 @@ CREATE TRIGGER `trg_calculeaza_buget_efectiv_update` BEFORE UPDATE ON `sarcina` 
         );
     ELSE
         SET NEW.buget_efectiv = 0;
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_calculeaza_data_finalizare_sarcina` BEFORE INSERT ON `sarcina` FOR EACH ROW BEGIN
+    -- Dacă nu este specificată manual, calculăm data estimată de finalizare
+    IF NEW.data_inceput IS NOT NULL AND NEW.timp_alocat_ore IS NOT NULL THEN
+        SET NEW.data_finalizare_estimata = calculeaza_data_finalizare_estimata(NEW.data_inceput, NEW.timp_alocat_ore);
     END IF;
 END
 $$
@@ -425,6 +570,173 @@ CREATE TRIGGER `trg_update_buget_sarcina` BEFORE UPDATE ON `sarcina` FOR EACH RO
         FROM utilizator
         WHERE nr_matricol = NEW.utilizator_responsabil;
         SET NEW.buget_alocat = salariu_ora_utilizator * NEW.timp_alocat_ore;
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_data_finalizare_sarcina` BEFORE UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    -- Dacă s-a modificat timpul alocat sau data de start, recalculează estimarea
+    IF (NEW.timp_alocat_ore <> OLD.timp_alocat_ore OR NEW.data_inceput <> OLD.data_inceput)
+       AND NEW.data_inceput IS NOT NULL THEN
+        SET NEW.data_finalizare_estimata = calculeaza_data_finalizare_estimata(NEW.data_inceput, NEW.timp_alocat_ore);
+    END IF;
+
+    -- Dacă statusul devine 'finalizata', setează data efectivă
+    IF NEW.status = 'finalizata' AND OLD.status <> 'finalizata' THEN
+        SET NEW.data_finalizare_efectiva = CURDATE();
+    END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_finalizare_sarcina_delete` AFTER DELETE ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE v_id_categorie INT;
+    DECLARE v_id_proiect INT;
+
+    -- Preluăm categoria sarcinii șterse
+    SET v_id_categorie = OLD.id_categorie_sarcina;
+
+    -- Preluăm proiectul asociat categoriei
+    SELECT id_proiect INTO v_id_proiect
+    FROM categorie_sarcina
+    WHERE id_categorie_sarcina = v_id_categorie;
+
+    -- Recalculăm datele finale pentru categoria de sarcini
+    UPDATE categorie_sarcina
+    SET 
+        data_finalizare_estimata = (
+            SELECT MAX(data_finalizare_estimata)
+            FROM sarcina
+            WHERE id_categorie_sarcina = v_id_categorie
+        ),
+        data_finalizare_efectiva = (
+            SELECT MAX(data_finalizare_efectiva)
+            FROM sarcina
+            WHERE id_categorie_sarcina = v_id_categorie
+        )
+    WHERE id_categorie_sarcina = v_id_categorie;
+
+    -- Recalculăm datele finale pentru proiect
+    UPDATE proiecte
+    SET 
+        data_finalizare_estimata = (
+            SELECT MAX(data_finalizare_estimata)
+            FROM categorie_sarcina
+            WHERE id_proiect = v_id_proiect
+        ),
+        data_finalizare_efectiva = (
+            SELECT MAX(data_finalizare_efectiva)
+            FROM categorie_sarcina
+            WHERE id_proiect = v_id_proiect
+        )
+    WHERE id_proiect = v_id_proiect;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_finalizare_sarcina_insert` AFTER INSERT ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE v_id_categorie INT;
+    DECLARE v_id_proiect INT;
+    
+    -- Identificăm categoria și proiectul
+    SET v_id_categorie = NEW.id_categorie_sarcina;
+    
+    SELECT id_proiect INTO v_id_proiect
+    FROM categorie_sarcina
+    WHERE id_categorie_sarcina = v_id_categorie;
+    
+    -- Actualizăm data_finalizare_estimata pentru categoria de sarcini
+    UPDATE categorie_sarcina
+    SET data_finalizare_estimata = (
+        SELECT MAX(data_finalizare_estimata)
+        FROM sarcina
+        WHERE id_categorie_sarcina = v_id_categorie
+    ),
+        data_finalizare_efectiva = (
+        SELECT MAX(data_finalizare_efectiva)
+        FROM sarcina
+        WHERE id_categorie_sarcina = v_id_categorie
+    )
+    WHERE id_categorie_sarcina = v_id_categorie;
+    
+    -- Actualizăm data_finalizare_estimata pentru proiect
+    UPDATE proiecte
+    SET data_finalizare_estimata = (
+        SELECT MAX(data_finalizare_estimata)
+        FROM categorie_sarcina
+        WHERE id_proiect = v_id_proiect
+    ),
+        data_finalizare_efectiva = (
+        SELECT MAX(data_finalizare_efectiva)
+        FROM categorie_sarcina
+        WHERE id_proiect = v_id_proiect
+    )
+    WHERE id_proiect = v_id_proiect;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_finalizare_sarcina_update` AFTER UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    DECLARE v_id_categorie INT;
+    DECLARE v_id_proiect INT;
+    
+    SET v_id_categorie = NEW.id_categorie_sarcina;
+    
+    SELECT id_proiect INTO v_id_proiect
+    FROM categorie_sarcina
+    WHERE id_categorie_sarcina = v_id_categorie;
+    
+    -- Actualizăm categoria de sarcini
+    UPDATE categorie_sarcina
+    SET data_finalizare_estimata = (
+        SELECT MAX(data_finalizare_estimata)
+        FROM sarcina
+        WHERE id_categorie_sarcina = v_id_categorie
+    ),
+        data_finalizare_efectiva = (
+        SELECT MAX(data_finalizare_efectiva)
+        FROM sarcina
+        WHERE id_categorie_sarcina = v_id_categorie
+    )
+    WHERE id_categorie_sarcina = v_id_categorie;
+    
+    -- Actualizăm proiectul
+    UPDATE proiecte
+    SET data_finalizare_estimata = (
+        SELECT MAX(data_finalizare_estimata)
+        FROM categorie_sarcina
+        WHERE id_proiect = v_id_proiect
+    ),
+        data_finalizare_efectiva = (
+        SELECT MAX(data_finalizare_efectiva)
+        FROM categorie_sarcina
+        WHERE id_proiect = v_id_proiect
+    )
+    WHERE id_proiect = v_id_proiect;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_statistici_sarcina_delete` AFTER DELETE ON `sarcina` FOR EACH ROW BEGIN
+    CALL sp_actualizeaza_statistici(OLD.id_categorie_sarcina);
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_statistici_sarcina_insert` AFTER INSERT ON `sarcina` FOR EACH ROW BEGIN
+    CALL sp_actualizeaza_statistici(NEW.id_categorie_sarcina);
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_statistici_sarcina_update` AFTER UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    -- Dacă s-a schimbat categoria de sarcini, actualizăm ambele
+    IF OLD.id_categorie_sarcina <> NEW.id_categorie_sarcina THEN
+        CALL sp_actualizeaza_statistici(OLD.id_categorie_sarcina);
+        CALL sp_actualizeaza_statistici(NEW.id_categorie_sarcina);
+    ELSE
+        CALL sp_actualizeaza_statistici(NEW.id_categorie_sarcina);
     END IF;
 END
 $$
@@ -617,6 +929,18 @@ ALTER TABLE `sarcina`
 ALTER TABLE `utilizator`
   ADD CONSTRAINT `utilizator_ibfk_1` FOREIGN KEY (`superior`) REFERENCES `utilizator` (`nr_matricol`),
   ADD CONSTRAINT `utilizator_ibfk_2` FOREIGN KEY (`id_categorie`) REFERENCES `categorie` (`id_categorie`);
+
+DELIMITER $$
+--
+-- Events
+--
+CREATE DEFINER=`root`@`localhost` EVENT `ev_resetare_concedii_anuale` ON SCHEDULE EVERY 1 YEAR STARTS '2026-01-01 00:00:00' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
+    -- Resetăm zilele de concediu utilizate pentru toți utilizatorii
+    UPDATE utilizator
+    SET zile_concediu_utilizate = 0;
+END$$
+
+DELIMITER ;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
