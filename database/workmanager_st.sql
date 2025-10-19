@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 16, 2025 at 10:34 PM
+-- Generation Time: Oct 20, 2025 at 12:35 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -583,9 +583,61 @@ CREATE TRIGGER `trg_update_data_finalizare_sarcina` BEFORE UPDATE ON `sarcina` F
     END IF;
 
     -- Dacă statusul devine 'finalizata', setează data efectivă
-    IF NEW.status = 'finalizata' AND OLD.status <> 'finalizata' THEN
+    IF NEW.status = 'finalizat' AND OLD.status <> 'finalizat' THEN
         SET NEW.data_finalizare_efectiva = CURDATE();
     END IF;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_data_inceput_categorie_delete` AFTER DELETE ON `sarcina` FOR EACH ROW BEGIN
+    UPDATE categorie_sarcina
+    SET data_inceput = (
+        SELECT MIN(data_inceput)
+        FROM sarcina
+        WHERE id_categorie_sarcina = OLD.id_categorie_sarcina
+          AND data_inceput IS NOT NULL
+    )
+    WHERE id_categorie_sarcina = OLD.id_categorie_sarcina;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_data_inceput_categorie_insert` AFTER INSERT ON `sarcina` FOR EACH ROW BEGIN
+    UPDATE categorie_sarcina
+    SET data_inceput = (
+        SELECT MIN(data_inceput)
+        FROM sarcina
+        WHERE id_categorie_sarcina = NEW.id_categorie_sarcina
+          AND data_inceput IS NOT NULL
+    )
+    WHERE id_categorie_sarcina = NEW.id_categorie_sarcina;
+END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_update_data_inceput_categorie_update` AFTER UPDATE ON `sarcina` FOR EACH ROW BEGIN
+    -- Actualizăm categoria veche (în caz că s-a mutat sarcina)
+    IF OLD.id_categorie_sarcina <> NEW.id_categorie_sarcina THEN
+        UPDATE categorie_sarcina
+        SET data_inceput = (
+            SELECT MIN(data_inceput)
+            FROM sarcina
+            WHERE id_categorie_sarcina = OLD.id_categorie_sarcina
+              AND data_inceput IS NOT NULL
+        )
+        WHERE id_categorie_sarcina = OLD.id_categorie_sarcina;
+    END IF;
+
+    -- Actualizăm categoria nouă
+    UPDATE categorie_sarcina
+    SET data_inceput = (
+        SELECT MIN(data_inceput)
+        FROM sarcina
+        WHERE id_categorie_sarcina = NEW.id_categorie_sarcina
+          AND data_inceput IS NOT NULL
+    )
+    WHERE id_categorie_sarcina = NEW.id_categorie_sarcina;
 END
 $$
 DELIMITER ;
